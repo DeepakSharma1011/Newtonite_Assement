@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TeamRole {
+  viewer
+  member
+  lead
+  admin
+}
+
+enum ItemType {
+  incident
+  customer_issue
+  payment
+  compliance
+  task
+}
+
+enum Priority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum Status {
+  open
+  in_progress
+  awaiting_approval
+  resolved
+  closed
+}
+
+model User {
+  id            String       @id @default(uuid())
+  name          String
+  email         String       @unique
+  password_hash String
+  created_at    DateTime     @default(now())
+
+  memberships     Membership[]
+  assigned_items  WorkItem[]        @relation("AssignedItems")
+  created_items   WorkItem[]        @relation("CreatedItems")
+  activity_events ActivityEvent[]
+  comments        Comment[]
+  idempotency_keys IdempotencyKey[]
+
+  @@map("users")
+}
+
+model Team {
+  id         String       @id @default(uuid())
+  name       String       @unique
+  created_at DateTime     @default(now())
+
+  memberships Membership[]
+  work_items  WorkItem[]
+
+  @@map("teams")
+}
+
+model Membership {
+  user_id String
+  team_id String
+  role    TeamRole @default(member)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [team_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, team_id])
+  @@map("memberships")
+}
+
+model WorkItem {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  type        ItemType
+  priority    Priority @default(medium)
+  status      Status   @default(open)
+  team_id     String
+  assignee_id String?
+  created_by  String
+  due_date    DateTime?
+  version     Int      @default(1)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  team     Team  @relation(fields: [team_id], references: [id], onDelete: Cascade)
+  assignee User? @relation("AssignedItems", fields: [assignee_id], references: [id], onDelete: SetNull)
+  creator  User  @relation("CreatedItems", fields: [created_by], references: [id], onDelete: Cascade)
+
+  activity_events ActivityEvent[]
+  comments        Comment[]
+
+  @@index([team_id, status])
+  @@index([assignee_id])
+  @@index([priority])
+  @@index([created_at])
+  @@map("work_items")
+}
+
+model ActivityEvent {
+  id         String   @id @default(uuid())
+  item_id    String
+  actor_id   String
+  event_type String
+  old_value  String?
+  new_value  String?
+  created_at DateTime @default(now())
+
+  item  WorkItem @relation(fields: [item_id], references: [id], onDelete: Cascade)
+  actor User     @relation(fields: [actor_id], references: [id], onDelete: Cascade)
+
+  @@index([item_id, created_at])
+  @@map("activity_events")
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  item_id    String
+  author_id  String
+  body       String
+  created_at DateTime @default(now())
+
+  item   WorkItem @relation(fields: [item_id], references: [id], onDelete: Cascade)
+  author User     @relation(fields: [author_id], references: [id], onDelete: Cascade)
+
+  @@index([item_id, created_at])
+  @@map("comments")
+}
+
+model IdempotencyKey {
+  key             String
+  user_id         String
+  response_status Int
+  response_body   String
+  created_at      DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([key, user_id])
+  @@map("idempotency_keys")
+}
